@@ -1,0 +1,34 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+.env.local
+.env*.local
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local leftovers
+*.db
+backend/data/
+node_modules/
+.next/
+out/
+outputs/
+*.png
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
