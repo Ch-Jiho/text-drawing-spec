@@ -85,12 +85,12 @@ VISION_PROMPT = (
 )
 
 
-def _openai_client() -> OpenAI:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY가 없습니다. 프로젝트 루트 .env에 키를 넣으세요.")
+def _openai_client(api_key: str | None = None) -> OpenAI:
+    key = (api_key or "").strip() or os.getenv("OPENAI_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY가 없습니다. Streamlit 상단에 키를 입력하거나 프로젝트 루트 .env에 넣으세요.")
     return OpenAI(
-        api_key=api_key,
+        api_key=key,
         base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip() or "https://api.openai.com/v1",
     )
 
@@ -136,8 +136,8 @@ def prepare_image_for_vision(image_bytes: bytes) -> tuple[bytes, str]:
     return out.getvalue(), "image/png"
 
 
-def parse_text_to_spec(user_text: str) -> SpecDraft:
-    response = _openai_client().chat.completions.create(
+def parse_text_to_spec(user_text: str, api_key: str | None = None) -> SpecDraft:
+    response = _openai_client(api_key).chat.completions.create(
         model=_openai_model(),
         temperature=0,
         response_format={"type": "json_object"},
@@ -158,11 +158,11 @@ def parse_text_to_spec(user_text: str) -> SpecDraft:
     return _spec_from_llm_content(response.choices[0].message.content)
 
 
-def parse_image_to_spec(image_bytes: bytes, filename: str = "") -> SpecDraft:
+def parse_image_to_spec(image_bytes: bytes, filename: str = "", api_key: str | None = None) -> SpecDraft:
     prepared, mime = prepare_image_for_vision(image_bytes)
     encoded = base64.b64encode(prepared).decode("ascii")
     label = filename.strip() or "drawing.png"
-    response = _openai_client().chat.completions.create(
+    response = _openai_client(api_key).chat.completions.create(
         model=_openai_model(),
         temperature=0,
         response_format={"type": "json_object"},

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -31,7 +31,7 @@ app.add_middleware(
     allow_origins=["http://localhost:8501", "http://127.0.0.1:8501"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-OpenAI-Api-Key"],
 )
 
 
@@ -57,6 +57,16 @@ def _has_openai_key() -> bool:
     return bool(os.getenv("OPENAI_API_KEY", "").strip())
 
 
+def _resolve_api_key(x_openai_api_key: str | None) -> str:
+    key = (x_openai_api_key or "").strip() or os.getenv("OPENAI_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(
+            status_code=503,
+            detail="OPENAI_API_KEY가 없습니다. Streamlit 상단에 키를 입력하거나 `.env`에 넣으세요.",
+        )
+    return key
+
+
 @app.get("/health")
 def health() -> dict:
     return {
@@ -67,17 +77,16 @@ def health() -> dict:
 
 
 @app.post("/summarize")
-def summarize(body: SummarizeIn) -> dict:
+def summarize(
+    body: SummarizeIn,
+    x_openai_api_key: str | None = Header(default=None, alias="X-OpenAI-Api-Key"),
+) -> dict:
     text = (body.text or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="설명을 입력하세요.")
-    if not _has_openai_key():
-        raise HTTPException(
-            status_code=503,
-            detail="OPENAI_API_KEY가 없습니다. `.env`에 키를 넣으세요.",
-        )
+    api_key = _resolve_api_key(x_openai_api_key)
     try:
-        spec = parse_text_to_spec(text)
+        spec = parse_text_to_spec(text, api_key=api_key)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"LLM 파싱 실패: {exc}") from exc
 
@@ -94,12 +103,11 @@ def summarize(body: SummarizeIn) -> dict:
 
 
 @app.post("/extract")
-def extract(file: UploadFile = File(...)) -> dict:
-    if not _has_openai_key():
-        raise HTTPException(
-            status_code=503,
-            detail="OPENAI_API_KEY가 없습니다. `.env`에 키를 넣으세요.",
-        )
+def extract(
+    file: UploadFile = File(...),
+    x_openai_api_key: str | None = Header(default=None, alias="X-OpenAI-Api-Key"),
+) -> dict:
+    api_key = _resolve_api_key(x_openai_api_key)
     filename = (file.filename or "drawing.png").strip() or "drawing.png"
     suffix = Path(filename).suffix.lower()
     content_type = (file.content_type or "").lower()
@@ -113,7 +121,7 @@ def extract(file: UploadFile = File(...)) -> dict:
         raise HTTPException(status_code=400, detail="이미지가 너무 큽니다. 15MB 이하로 올려 주세요.")
 
     try:
-        spec = parse_image_to_spec(image_bytes, filename)
+        spec = parse_image_to_spec(image_bytes, filename, api_key=api_key)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"도면 치수 추출 실패: {exc}") from exc
 

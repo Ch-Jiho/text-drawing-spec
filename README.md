@@ -56,7 +56,7 @@ BACKEND_URL=http://127.0.0.1:8000
 
 선택: `OPENAI_BASE_URL`, `SQLITE_PATH`(기본 `backend/data/app.db`).
 
-키는 FastAPI만 읽습니다. Streamlit에는 넣지 않습니다. 도면 업로드는 `python-multipart`가 필요합니다.
+`.env`에서 `OPENAI_API_KEY`를 읽지 못하면 Streamlit 상단에 입력란이 나옵니다. 여기에 키를 붙여 넣으면 그 세션에서 사용합니다. 도면 업로드는 `python-multipart`가 필요합니다.
 
 3. 터미널 두 개에서, **프로젝트 루트**로 실행합니다.
 
@@ -116,7 +116,7 @@ streamlit run frontend/app.py
 
 ## 한계
 
-- OpenAI API 키가 필수입니다. 텍스트 파싱과 도면 치수 추출 모두 키가 필요합니다.
+- OpenAI API 키가 필수입니다. 텍스트 파싱과 도면 치수 추출 모두 키가 필요합니다. `.env`가 없으면 Streamlit 상단에 키를 입력합니다.
 - FastAPI(`8000`)와 Streamlit을 같이 켜야 합니다.
 - 지원 솔리드는 box / cylinder / plate 뿐입니다.
 - 치수선·표제란·축척(1:1, 1:2, 1:5, 1:10)은 교육용 근사입니다.

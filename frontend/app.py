@@ -41,6 +41,21 @@ LABEL_TEXT_TO_DRAWING = "텍스트 to 도면"
 LABEL_DRAWING_TO_TEXT = "도면 to 텍스트"
 
 
+def _api_headers() -> dict[str, str]:
+    key = (st.session_state.get("openai_api_key_input") or "").strip()
+    if key:
+        return {"X-OpenAI-Api-Key": key}
+    return {}
+
+
+def ui_openai_key() -> str:
+    return (st.session_state.get("openai_api_key_input") or "").strip()
+
+
+def env_openai_key() -> str:
+    return os.getenv("OPENAI_API_KEY", "").strip()
+
+
 def _api_detail(response: requests.Response) -> str:
     try:
         payload = response.json()
@@ -64,7 +79,12 @@ def api_health() -> dict[str, Any]:
 
 
 def api_summarize(text: str) -> dict[str, Any]:
-    response = requests.post(f"{BACKEND_URL}/summarize", json={"text": text}, timeout=60)
+    response = requests.post(
+        f"{BACKEND_URL}/summarize",
+        json={"text": text},
+        headers=_api_headers(),
+        timeout=60,
+    )
     if response.status_code >= 400:
         raise RuntimeError(_api_detail(response))
     return response.json()
@@ -85,6 +105,7 @@ def api_extract(file_bytes: bytes, filename: str, mime: str) -> dict[str, Any]:
     response = requests.post(
         f"{BACKEND_URL}/extract",
         files={"file": (filename, file_bytes, mime or "application/octet-stream")},
+        headers=_api_headers(),
         timeout=90,
     )
     if response.status_code >= 400:
@@ -311,6 +332,30 @@ def render_mode_toggle() -> str:
     return st.session_state.get("app_mode", MODE_TEXT_TO_DRAWING)
 
 
+def render_api_key_banner(env_loaded: bool) -> None:
+    if env_loaded:
+        return
+    with st.container(border=True):
+        st.markdown('<div class="section-title">OPENAI_API_KEY가 없습니다</div>', unsafe_allow_html=True)
+        st.markdown(
+            """
+`.env`에서 OpenAI 키를 읽지 못했습니다. 아래 칸에 키를 바로 입력하면 이 세션에서 사용할 수 있습니다.
+
+1. [OpenAI API keys](https://platform.openai.com/api-keys)에서 키를 복사합니다.
+2. 아래 **OPENAI_API_KEY** 칸에 붙여 넣습니다. (`sk-`로 시작합니다.)
+3. 스펙 추출 또는 치수표 생성을 다시 누릅니다.
+
+키는 화면에만 두고 파일로 저장하지 않습니다. 다음에 `.env`에 `OPENAI_API_KEY=`를 넣으면 이 칸은 나오지 않습니다.
+            """
+        )
+        st.text_input(
+            "OPENAI_API_KEY",
+            type="password",
+            placeholder="sk-...",
+            key="openai_api_key_input",
+        )
+
+
 def form_key(name: str) -> str:
     return f"{name}_{st.session_state.get('form_rev', 0)}"
 
@@ -368,7 +413,7 @@ def run_parse(user_text: str, has_key: bool) -> None:
     st.session_state.png_bytes = None
     st.session_state.history_id = None
     if not has_key:
-        st.session_state.error = "OPENAI_API_KEY가 없습니다. `.env`에 키를 넣으세요."
+        st.session_state.error = "OPENAI_API_KEY가 없습니다. 화면 상단에 키를 입력하거나 `.env`에 넣으세요."
         return
     if not user_text.strip():
         st.session_state.error = "설명을 입력하세요."
@@ -391,7 +436,7 @@ def run_extract(uploaded: Any, has_key: bool) -> None:
     st.session_state.png_bytes = None
     st.session_state.history_id = None
     if not has_key:
-        st.session_state.error = "OPENAI_API_KEY가 없습니다. `.env`에 키를 넣으세요."
+        st.session_state.error = "OPENAI_API_KEY가 없습니다. 화면 상단에 키를 입력하거나 `.env`에 넣으세요."
         return
     if uploaded is None:
         st.session_state.error = "도면 이미지를 업로드하세요."
@@ -620,15 +665,11 @@ def render_drawing_preview(spec: SpecDraft) -> None:
             st.error("도면 이미지가 없습니다. 확인 후 도면 생성을 다시 눌러 주세요.")
 
 
-def render_health_errors(health: dict[str, Any], *, drawing_to_text: bool) -> bool:
-    has_key = bool(health.get("has_openai_key"))
+def render_health_errors(health: dict[str, Any]) -> bool:
+    env_loaded = bool(health.get("has_openai_key")) or bool(env_openai_key())
+    has_key = env_loaded or bool(ui_openai_key())
     if not health.get("reachable"):
         st.error("백엔드에 연결할 수 없습니다. 다른 터미널에서 `uvicorn backend.main:app --reload --port 8000` 을 실행하세요.")
-    elif not has_key:
-        if drawing_to_text:
-            st.error("OPENAI_API_KEY가 없습니다. `.env`에 키를 넣으세요. 키가 없으면 치수표를 만들지 않습니다.")
-        else:
-            st.error("OPENAI_API_KEY가 없습니다. `.env`에 키를 넣으세요. 키가 없으면 도면을 만들지 않습니다.")
     return has_key
 
 
@@ -737,11 +778,14 @@ def main() -> None:
     st.set_page_config(page_title="텍스트 도면 생성기", layout="centered")
     init_session()
     st.markdown(PAGE_CSS, unsafe_allow_html=True)
-    mode = render_mode_toggle()
 
     health = api_health()
+    env_loaded = bool(health.get("has_openai_key")) or bool(env_openai_key())
+    render_api_key_banner(env_loaded)
+
+    mode = render_mode_toggle()
     st.session_state.backend_drawing_version = health.get("drawing_version") or ""
-    has_key = render_health_errors(health, drawing_to_text=mode == MODE_DRAWING_TO_TEXT)
+    has_key = render_health_errors(health)
 
     if mode == MODE_DRAWING_TO_TEXT:
         render_drawing_to_text_flow(has_key)
